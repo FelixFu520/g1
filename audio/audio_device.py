@@ -232,8 +232,7 @@ class AudioDevice:
         try:
             logger.info(f"正在启动音频流: device={self._alsa_device}, "
                         f"sample_rate={self.sample_rate}, channels={self.channels}, "
-                        f"chunk_size={self.chunk_size}, "
-                        f"input_only={input_only}, output_only={output_only}")
+                        f"chunk_size={self.chunk_size}")
             
             if not output_only:
                 self._open_input_stream()
