@@ -33,24 +33,21 @@ class AudioDevice:
         logger.info(f"找到{self.device_name}设备, 索引: {self.device_index}")
         
         self.device_info = self.p.get_device_info_by_index(self.device_index)
-        logger.info(f"设备信息: {self.device_info}")
+        logger.debug(f"设备信息: {self.device_info}")
         self.format = pyaudio.paInt16
         self.sample_rate = int(self.device_info.get("defaultSampleRate", 44100.0))
         
         # 获取 ALSA 硬件设备名（用于 arecord）
         self._alsa_device = self._get_alsa_device_name()
-        logger.info(f"ALSA设备名: {self._alsa_device}")
+        logger.debug(f"ALSA设备名: {self._alsa_device}")
 
         # 音频流
         self.input_stream = None    # arecord 子进程（录音）
-        self.output_stream = None   # PyAudio 流（播放，仍用回调模式）
+        self.output_stream = None   # aplay 子进程（播放）
         
         # 播放队列和同步录音队列
         self.playback_queue = queue.Queue()
         self.recording_queue = queue.Queue()
-        
-        # 播放缓冲区
-        self.playback_buffer = bytearray()
         
         # 标识音频流是否正在运行
         self.is_running = False
@@ -60,6 +57,10 @@ class AudioDevice:
         self._reader_running = False
         self._input_read_count = 0
         self._input_read_last_time = 0.0
+        
+        # 播放写入线程
+        self._writer_thread = None
+        self._writer_running = False
         
         # 异步录音队列
         self._async_queue = None
@@ -152,30 +153,44 @@ class AudioDevice:
                 break
         logger.info(f"录音读取线程已退出, 总读取={self._input_read_count}")
 
-    def _output_callback(self, in_data, frame_count, time_info, status):
-        """播放回调函数"""
-        if status:
-            logger.warning(f"播放回调状态异常: status={status}")
-        required_bytes = frame_count * self.channels * 2
-        
-        while len(self.playback_buffer) < required_bytes:
+    def _start_aplay(self):
+        """启动 aplay 子进程进行播放"""
+        # 使用 plughw 替代 hw，自动处理声道数/格式转换
+        alsa_play_device = self._alsa_device.replace("hw:", "plughw:")
+        self.output_stream = subprocess.Popen(
+            ['aplay', '-D', alsa_play_device,
+             '-f', 'S16_LE',
+             '-r', str(self.sample_rate),
+             '-c', str(self.channels),
+             '-t', 'raw',
+             '--buffer-size=4096'],
+            stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0
+        )
+        logger.info(f"aplay 已启动: pid={self.output_stream.pid}, "
+                    f"device={alsa_play_device}, rate={self.sample_rate}, ch={self.channels}")
+
+    def _writer_loop(self):
+        """
+        播放写入线程：从播放队列取 PCM 数据，写入 aplay stdin。
+        """
+        logger.info("播放写入线程已启动")
+        while self._writer_running:
             try:
-                chunk = self.playback_queue.get_nowait()
-                self.playback_buffer.extend(chunk)
+                data = self.playback_queue.get(timeout=0.5)
+                if self.output_stream and self.output_stream.poll() is None:
+                    self.output_stream.stdin.write(data)
+                    self.output_stream.stdin.flush()
             except queue.Empty:
+                continue
+            except (OSError, BrokenPipeError) as e:
+                if self._writer_running:
+                    logger.warning(f"播放写入OSError: {e}")
                 break
-        
-        if len(self.playback_buffer) >= required_bytes:
-            data = bytes(self.playback_buffer[:required_bytes])
-            self.playback_buffer = self.playback_buffer[required_bytes:]
-        elif len(self.playback_buffer) > 0:
-            data = bytes(self.playback_buffer)
-            data = data + b'\x00' * (required_bytes - len(data))
-            self.playback_buffer.clear()
-        else:
-            data = b'\x00' * required_bytes
-        
-        return (data, pyaudio.paContinue)
+            except Exception as e:
+                if self._writer_running:
+                    logger.error(f"播放写入线程异常: {type(e).__name__}: {e}")
+                break
+        logger.info("播放写入线程已退出")
     
     def _open_input_stream(self):
         """启动录音: arecord 子进程 + 读取线程"""
@@ -187,6 +202,15 @@ class AudioDevice:
             target=self._reader_loop, daemon=True, name="audio-reader"
         )
         self._reader_thread.start()
+
+    def _open_output_stream(self):
+        """启动播放: aplay 子进程 + 写入线程"""
+        self._start_aplay()
+        self._writer_running = True
+        self._writer_thread = threading.Thread(
+            target=self._writer_loop, daemon=True, name="audio-writer"
+        )
+        self._writer_thread.start()
 
     def start_streams(self, input_only=False, output_only=False):
         """
@@ -204,18 +228,11 @@ class AudioDevice:
             
             if not output_only:
                 self._open_input_stream()
+                logger.info("录音流已打开 (arecord)")
             
             if not input_only:
-                self.output_stream = self.p.open(
-                    format=self.format,
-                    channels=self.channels,
-                    rate=self.sample_rate,
-                    output=True,
-                    output_device_index=self.device_index,
-                    frames_per_buffer=self.chunk_size,
-                    stream_callback=self._output_callback
-                )
-                logger.info(f"播放流已打开: is_active={self.output_stream.is_active()}")
+                self._open_output_stream()
+                logger.info("播放流已打开 (aplay)")
             
             self.is_running = True
             logger.info("音频流启动完成")
@@ -264,18 +281,32 @@ class AudioDevice:
             logger.error(f"录音流重启失败: {e}")
             return False
     
+    def _stop_output(self):
+        """停止播放（停线程 + 杀 aplay 进程）"""
+        self._writer_running = False
+        
+        if self.output_stream and self.output_stream.poll() is None:
+            try:
+                self.output_stream.stdin.close()
+            except Exception:
+                pass
+            self.output_stream.terminate()
+            try:
+                self.output_stream.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                self.output_stream.kill()
+                self.output_stream.wait(timeout=1.0)
+        self.output_stream = None
+        
+        if self._writer_thread and self._writer_thread.is_alive():
+            self._writer_thread.join(timeout=1.0)
+        self._writer_thread = None
+
     def stop_streams(self):
         """停止所有音频流"""
         self.is_running = False
         self._stop_input()
-            
-        if self.output_stream:
-            try:
-                self.output_stream.stop_stream()
-                self.output_stream.close()
-            except Exception:
-                pass
-            self.output_stream = None
+        self._stop_output()
         
         logger.info("音频流已停止")
     
@@ -309,8 +340,10 @@ class AudioDevice:
                 break
     
     def clear_playback_buffer(self):
-        """清空当前播放缓冲数据"""
-        self.playback_buffer.clear()
+        """清空当前播放缓冲（aplay 模式下重启 aplay 以清空内核缓冲）"""
+        if self.output_stream and self.output_stream.poll() is None:
+            self._stop_output()
+            self._open_output_stream()
     
     def clear_recording_queue(self):
         """清空录音队列"""
