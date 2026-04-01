@@ -11,8 +11,8 @@ uv sync -p 3.8
 ## 配置
 ```
 cd g1
-cp g1.json ~/.config/
 mkdir -p ~/.config/g1
+cp g1.json ~/.config/g1
 cp g1_system_prompt_en.txt ~/.config/g1
 cp g1_system_prompt_zh.txt ~/.config/g1
 ```
@@ -26,20 +26,16 @@ python 01_device_list.py
 python 02_test_AudioDevice.py
 
 # 豆包ASR
-export G1_SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
-python 03_doubao_asr.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1 python 03_doubao_asr.py
 
 # 豆包TTS
-export G1_SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
-python 04_doubao_tts.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1 python 04_doubao_tts.py
 
 # 豆包LLM
-export G1_SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
-python 05_doubao_llm.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1 python 05_doubao_llm.py
 
 # g1聊天
-export G1_SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
-python g1.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1 python g1.py
 
 ```
 ### ROS集成

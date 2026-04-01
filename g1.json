@@ -28,8 +28,8 @@
     "language": "zh",
     "wake_up_text": "地瓜地瓜",
     "sleep_text": "再见",
-    "system_prompt_zh_path":"~/.config/g1_system_prompt_zh.txt",
-    "system_prompt_en_path":"~/.config/g1_system_prompt_en.txt",
+    "system_prompt_zh_path":"~/.config/g1/g1_system_prompt_zh.txt",
+    "system_prompt_eh_path":"~/.config/g1/g1_system_prompt_en.txt",
     "hooks":{
         "wake_sleep_hooks": [
             

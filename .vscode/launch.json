@@ -50,6 +50,16 @@
                 "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
             }
         },
-        
+
+        {
+            "name": "g1.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/g1.py",
+            "console": "integratedTerminal",
+            "env": {
+                "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
+            }
+        },
     ]
 }
