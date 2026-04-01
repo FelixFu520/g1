@@ -46,7 +46,7 @@ async def test_realtime_asr(url: str, seg_duration: int, duration: int):
                 async for response in client.execute_stream(audio_stream):
                     # 解析响应数据
                     resp_dict = response.to_dict()
-                    logger.info(f"response: {response.to_dict()}")
+                    logger.debug(f"response: {response.to_dict()}")
                     # 检查响应中是否包含识别结果
                     if resp_dict.get('payload_msg') and 'result' in resp_dict['payload_msg']:
                         result = resp_dict['payload_msg']['result']

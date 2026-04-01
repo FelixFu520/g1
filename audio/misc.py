@@ -254,7 +254,7 @@ async def realtime_audio_generator(audio_device: AudioDevice, duration_seconds: 
                 gap = now - last_yield_time
                 last_yield_time = now
                 
-                logger.info(
+                logger.debug(
                     f"yield音频包 #{yield_count}: wav_size={len(wav_data)}, pcm_size={pcm_len}, "
                     f"距上次yield={gap:.3f}s, 累积chunks={chunk_count}, "
                     f"queue_size={audio_device.get_recording_queue_size()}"

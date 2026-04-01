@@ -555,7 +555,7 @@ class AsrWsClient:
                         break
                     
                     chunk_size = len(audio_chunk)
-                    logger.info(f"sender发送包 #{chunk_idx}: seq={self.seq}, size={chunk_size}, "
+                    logger.debug(f"sender发送包 #{chunk_idx}: seq={self.seq}, size={chunk_size}, "
                                f"等待chunk耗时={wait_for_chunk:.3f}s")
                     
                     if wait_for_chunk > 3.0:
@@ -589,7 +589,7 @@ class AsrWsClient:
                     is_last=True
                 )
                 await self.conn.send_bytes(request)
-                logger.info(f"sender发送结束包: seq={self.seq}, 总发送={chunk_idx}个音频包")
+                logger.debug(f"sender发送结束包: seq={self.seq}, 总发送={chunk_idx}个音频包")
                 
             except asyncio.CancelledError:
                 logger.warning(f"sender被取消, 已发送{chunk_idx}个包")

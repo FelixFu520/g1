@@ -1,0 +1,55 @@
+{
+    "configurations": [
+        {
+            "name": "01_device_list.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/01_device_list.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "02_test_AudioDevice.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/02_test_AudioDevice.py",
+            "console": "integratedTerminal",
+            "env": {
+                "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
+            }
+        },
+        
+        {
+            "name": "03_doubao_asr.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/03_doubao_asr.py",
+            "console": "integratedTerminal",
+            "env": {
+                "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
+            }
+        },
+        
+        {
+            "name": "04_doubao_tts.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/04_doubao_tts.py",
+            "console": "integratedTerminal",
+            "env": {
+                "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
+            }
+        },
+        
+        {
+            "name": "05_doubao_llm.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/05_doubao_llm.py",
+            "console": "integratedTerminal",
+            "env": {
+                "G1_SETTINGS_PATH": "${workspaceFolder}/g1.json"
+            }
+        },
+        
+    ]
+}
