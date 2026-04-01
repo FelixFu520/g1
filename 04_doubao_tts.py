@@ -51,144 +51,164 @@ async def main():
     """
     parser = argparse.ArgumentParser(description='豆包 TTS 测试工具')
     parser.add_argument("--text", default="你好，我是地瓜君，我是一个机器人，我可以帮助你完成各种任务。", help="Text to convert")
+    parser.add_argument("--repeat", type=int, default=4, help="播放text的次数 (默认: 4)")
+    parser.add_argument("--interval", type=float, default=4.0, help="每次播放之间的间隔秒数 (默认: 4.0)")
     args = parser.parse_args()
     
     # 初始化音频设备
     audio_device = AudioDevice()
     audio_device.start_streams()
-    logger.info("音频设备已启动")
 
     websocket = await create_websocket_connection(TTS_APP_KEY, TTS_ACCESS_KEY, TTS_RESOURCE_ID, TTS_ENDPOINT)
 
     try:
-        # 按句号分割文本，逐句处理
-        sentences = args.text.split("。")
-        audio_received = False  # 标记是否接收到音频数据
+        for round_idx in range(args.repeat):
+            if round_idx > 0:
+                logger.info(f"等待 {args.interval} 秒后开始第 {round_idx + 1}/{args.repeat} 次播放...")
+                await asyncio.sleep(args.interval)
 
-        for i, sentence in enumerate(sentences):
-            if not sentence:
-                continue
+            logger.info(f"开始第 {round_idx + 1}/{args.repeat} 次播放")
 
-            # 构建基础请求参数（每个会话可以有不同的参数）
-            base_request = {
-                "user": {
-                    "uid": str(uuid.uuid4()),  # 生成唯一的用户 ID
-                },
-                "namespace": "BidirectionalTTS",
-                    "req_params": {
-                    "speaker": TTS_VOICE_TYPE,  # 语音类型
-                    "audio_params": {
-                        "format": "pcm",  # 音频编码格式
-                        "sample_rate": audio_device.sample_rate,  # 服务器端采样率（与设备播放采样率保持一致）
-                        "enable_timestamp": True,  # 启用时间戳
+            # 非首次播放时，重启 aplay 以清空内核缓冲区，避免 write 阻塞
+            if round_idx > 0:
+                logger.info("重启播放流以确保干净状态...")
+                audio_device.clear_playback_queue()
+                audio_device._stop_output()
+                audio_device._open_output_stream()
+                logger.info("播放流已重启")
+
+            aplay_alive = audio_device.output_stream and audio_device.output_stream.poll() is None
+            writer_alive = audio_device._writer_thread and audio_device._writer_thread.is_alive()
+            logger.info(f"aplay状态: alive={aplay_alive}, writer_thread_alive={writer_alive}, "
+                        f"playback_queue_size={audio_device.get_playback_queue_size()}")
+
+            # 按句号分割文本，逐句处理
+            sentences = args.text.split("。")
+            audio_received = False  # 标记是否接收到音频数据
+
+            for i, sentence in enumerate(sentences):
+                if not sentence:
+                    continue
+
+                # 构建基础请求参数（每个会话可以有不同的参数）
+                base_request = {
+                    "user": {
+                        "uid": str(uuid.uuid4()),  # 生成唯一的用户 ID
                     },
-                    "additions": json.dumps(
-                        {
-                            "disable_markdown_filter": False,  # 不禁用 Markdown 过滤
-                        }
-                    ),
-                },
-            }
+                    "namespace": "BidirectionalTTS",
+                        "req_params": {
+                        "speaker": TTS_VOICE_TYPE,  # 语音类型
+                        "audio_params": {
+                            "format": "pcm",  # 音频编码格式
+                            "sample_rate": audio_device.sample_rate,  # 服务器端采样率（与设备播放采样率保持一致）
+                            "enable_timestamp": True,  # 启用时间戳
+                        },
+                        "additions": json.dumps(
+                            {
+                                "disable_markdown_filter": False,  # 不禁用 Markdown 过滤
+                            }
+                        ),
+                    },
+                }
 
-            # 启动会话
-            start_session_request = copy.deepcopy(base_request)
-            start_session_request["event"] = EventType.StartSession
-            session_id = str(uuid.uuid4())  # 生成唯一的会话 ID
-            await start_session(
-                websocket, json.dumps(start_session_request).encode(), session_id
-            )
-            await wait_for_event(
-                websocket, MsgType.FullServerResponse, EventType.SessionStarted
-            )
+                # 启动会话
+                start_session_request = copy.deepcopy(base_request)
+                start_session_request["event"] = EventType.StartSession
+                session_id = str(uuid.uuid4())  # 生成唯一的会话 ID
+                await start_session(
+                    websocket, json.dumps(start_session_request).encode(), session_id
+                )
+                await wait_for_event(
+                    websocket, MsgType.FullServerResponse, EventType.SessionStarted
+                )
 
-            # 逐字符发送文本（异步函数）
-            async def send_chars():
-                for char in sentence:
-                    synthesis_request = copy.deepcopy(base_request)
-                    synthesis_request["event"] = EventType.TaskRequest
-                    synthesis_request["req_params"]["text"] = char
-                    await task_request(
-                        websocket, json.dumps(synthesis_request).encode(), session_id
-                    )
-                    await asyncio.sleep(0.005)  # 字符间延迟 5ms，避免发送过快
+                # 逐字符发送文本（异步函数）
+                async def send_chars():
+                    for char in sentence:
+                        synthesis_request = copy.deepcopy(base_request)
+                        synthesis_request["event"] = EventType.TaskRequest
+                        synthesis_request["req_params"]["text"] = char
+                        await task_request(
+                            websocket, json.dumps(synthesis_request).encode(), session_id
+                        )
+                        await asyncio.sleep(0.005)  # 字符间延迟 5ms，避免发送过快
 
-                # 发送会话结束请求
-                await finish_session(websocket, session_id)
+                    # 发送会话结束请求
+                    await finish_session(websocket, session_id)
 
-            # 在后台任务中开始发送字符
-            send_task = asyncio.create_task(send_chars())
+                # 在后台任务中开始发送字符
+                send_task = asyncio.create_task(send_chars())
 
-            # 接收音频数据
-            audio_data = bytearray()  # 累积所有接收到的音频数据
-            playback_started = False  # 是否已开始播放
-            
-            # 循环接收消息直到会话结束
-            while True:
-                msg = await receive_message(websocket)
-
-                if msg.type == MsgType.FullServerResponse:
-                    # 处理服务器完整响应消息
-                    if msg.event == EventType.SessionFinished:
-                        break
-                elif msg.type == MsgType.AudioOnlyServer:
-                    # 处理音频数据消息
-                    if not audio_received and len(msg.payload) > 0:
-                        audio_received = True  # 标记已接收到音频
-                    
-                    # 收集所有音频数据
-                    audio_data.extend(msg.payload)
-                    
-                    # 实时播放音频片段（优化的批量转换策略）
-                    if audio_device and msg.payload:
-                        try:
-                            # PCM 格式：直接放入播放队列
-                            audio_device.put_playback_data(msg.payload)
-                            if not playback_started:
-                                playback_started = True
-                            # logger.info(f"添加PCM数据: {len(msg.payload)} bytes, 队列: {audio_device.get_playback_queue_size()}")
-                        except Exception as e:
-                            logger.error(f"播放音频片段失败: {e}")
-                else:
-                    raise RuntimeError(f"TTS conversion failed: {msg}")
-
-            # 等待字符发送任务完成
-            await send_task
-            
-            # 等待播放队列播放完成
-            if audio_device:
-                logger.info(f"等待播放完成,当前队列大小: {audio_device.get_playback_queue_size()}")
-                # 先等待队列有足够的数据
-                await asyncio.sleep(0.5)
+                # 接收音频数据
+                audio_data = bytearray()  # 累积所有接收到的音频数据
+                playback_started = False  # 是否已开始播放
                 
-                # 然后等待队列播放完
-                max_wait = 30  # 最多等待 30 秒
-                wait_count = 0
-                while audio_device.get_playback_queue_size() > 0 and wait_count < max_wait * 10:
-                    await asyncio.sleep(0.1)  # 每 100ms 检查一次
-                    wait_count += 1
+                # 循环接收消息直到会话结束
+                while True:
+                    msg = await receive_message(websocket)
+
+                    if msg.type == MsgType.FullServerResponse:
+                        # 处理服务器完整响应消息
+                        if msg.event == EventType.SessionFinished:
+                            break
+                    elif msg.type == MsgType.AudioOnlyServer:
+                        # 处理音频数据消息
+                        if not audio_received and len(msg.payload) > 0:
+                            audio_received = True  # 标记已接收到音频
+                        
+                        # 收集所有音频数据
+                        audio_data.extend(msg.payload)
+                        
+                        # 实时播放音频片段（优化的批量转换策略）
+                        if audio_device and msg.payload:
+                            try:
+                                # PCM 格式：直接放入播放队列
+                                audio_device.put_playback_data(msg.payload)
+                                if not playback_started:
+                                    playback_started = True
+                                # logger.info(f"添加PCM数据: {len(msg.payload)} bytes, 队列: {audio_device.get_playback_queue_size()}")
+                            except Exception as e:
+                                logger.error(f"播放音频片段失败: {e}")
+                    else:
+                        raise RuntimeError(f"TTS conversion failed: {msg}")
+
+                # 等待字符发送任务完成
+                await send_task
                 
-                # 额外等待一段时间确保最后的音频播放完
-                await asyncio.sleep(1.0)
-                logger.info("音频播放完成")
+                # 等待播放队列播放完成
+                if audio_device:
+                    q_size = audio_device.get_playback_queue_size()
+                    aplay_ok = audio_device.output_stream and audio_device.output_stream.poll() is None
+                    writer_ok = audio_device._writer_thread and audio_device._writer_thread.is_alive()
+                    logger.info(f"等待播放完成, queue={q_size}, aplay_alive={aplay_ok}, writer_alive={writer_ok}")
+                    # 先等待队列有足够的数据
+                    await asyncio.sleep(0.5)
+                    
+                    # 然后等待队列播放完
+                    max_wait = 30  # 最多等待 30 秒
+                    wait_count = 0
+                    while audio_device.get_playback_queue_size() > 0 and wait_count < max_wait * 10:
+                        await asyncio.sleep(0.1)  # 每 100ms 检查一次
+                        wait_count += 1
+                        if wait_count % 50 == 0:
+                            q_now = audio_device.get_playback_queue_size()
+                            aplay_ok = audio_device.output_stream and audio_device.output_stream.poll() is None
+                            writer_ok = audio_device._writer_thread and audio_device._writer_thread.is_alive()
+                            logger.info(f"仍在等待播放, queue={q_now}, aplay_alive={aplay_ok}, writer_alive={writer_ok}, waited={wait_count*0.1:.1f}s")
+                    
+                    # 额外等待一段时间确保最后的音频播放完
+                    await asyncio.sleep(1.0)
+                    logger.info("音频播放完成")
 
-            logger.info(f"会话 {i} 完成,总接收: {len(audio_data)} bytes")
+                logger.info(f"会话 {i} 完成,总接收: {len(audio_data)} bytes")
 
-        # 检查是否接收到音频数据
-        if not audio_received:
-            raise RuntimeError("No audio data received")
+            # 检查是否接收到音频数据
+            if not audio_received:
+                raise RuntimeError("No audio data received")
+
+            logger.info(f"第 {round_idx + 1}/{args.repeat} 次播放完成")
 
     finally:
-        # 确保所有音频播放完成
-        if audio_device:
-            logger.info(f"等待所有音频播放完成,当前队列大小: {audio_device.get_playback_queue_size()}")
-            max_wait = 30  # 最多等待 30 秒
-            wait_count = 0
-            while audio_device.get_playback_queue_size() > 0 and wait_count < max_wait * 10:
-                await asyncio.sleep(0.1)  # 每 100ms 检查一次
-                wait_count += 1
-            # 额外等待确保播放完成
-            await asyncio.sleep(1.0)
-        
         # 结束连接
         await finish_connection(websocket)
         msg = await wait_for_event(

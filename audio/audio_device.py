@@ -174,23 +174,32 @@ class AudioDevice:
         播放写入线程：从播放队列取 PCM 数据，写入 aplay stdin。
         """
         logger.info("播放写入线程已启动")
+        write_count = 0
+        drop_count = 0
         while self._writer_running:
             try:
                 data = self.playback_queue.get(timeout=0.5)
                 if self.output_stream and self.output_stream.poll() is None:
                     self.output_stream.stdin.write(data)
                     self.output_stream.stdin.flush()
+                    write_count += 1
+                else:
+                    drop_count += 1
+                    aplay_rc = self.output_stream.poll() if self.output_stream else "no_stream"
+                    if drop_count <= 5 or drop_count % 50 == 0:
+                        logger.warning(f"播放写入跳过: aplay已退出(returncode={aplay_rc}), "
+                                       f"drop_count={drop_count}, data_len={len(data)}")
             except queue.Empty:
                 continue
             except (OSError, BrokenPipeError) as e:
                 if self._writer_running:
-                    logger.warning(f"播放写入OSError: {e}")
+                    logger.warning(f"播放写入OSError: {e}, write_count={write_count}")
                 break
             except Exception as e:
                 if self._writer_running:
-                    logger.error(f"播放写入线程异常: {type(e).__name__}: {e}")
+                    logger.error(f"播放写入线程异常: {type(e).__name__}: {e}, write_count={write_count}")
                 break
-        logger.info("播放写入线程已退出")
+        logger.info(f"播放写入线程已退出, write_count={write_count}, drop_count={drop_count}")
     
     def _open_input_stream(self):
         """启动录音: arecord 子进程 + 读取线程"""
@@ -286,20 +295,23 @@ class AudioDevice:
         self._writer_running = False
         
         if self.output_stream and self.output_stream.poll() is None:
-            try:
-                self.output_stream.stdin.close()
-            except Exception:
-                pass
+            # 先杀进程，让阻塞在 stdin.write() 的线程收到 BrokenPipeError
             self.output_stream.terminate()
             try:
                 self.output_stream.wait(timeout=1.0)
             except subprocess.TimeoutExpired:
                 self.output_stream.kill()
                 self.output_stream.wait(timeout=1.0)
+            try:
+                self.output_stream.stdin.close()
+            except Exception:
+                pass
         self.output_stream = None
         
         if self._writer_thread and self._writer_thread.is_alive():
-            self._writer_thread.join(timeout=1.0)
+            self._writer_thread.join(timeout=2.0)
+            if self._writer_thread.is_alive():
+                logger.warning("播放写入线程未能在2秒内退出")
         self._writer_thread = None
 
     def stop_streams(self):
