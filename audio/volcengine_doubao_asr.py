@@ -369,7 +369,7 @@ class AsrWsClient:
                 self.url,
                 headers=headers
             )
-            logger.info(f"Connected to {self.url}")
+            logger.debug(f"Connected to {self.url}")
         except Exception as e:
             logger.error(f"Failed to connect to WebSocket: {e}")
             raise
@@ -379,12 +379,12 @@ class AsrWsClient:
         self.seq += 1  # 发送后递增
         try:
             await self.conn.send_bytes(request)
-            logger.info(f"Sent full client request with seq: {self.seq-1}")
+            logger.debug(f"Sent full client request with seq: {self.seq-1}")
             
             msg = await self.conn.receive()
             if msg.type == aiohttp.WSMsgType.BINARY:
                 response = ResponseParser.parse_response(msg.data)
-                logger.info(f"Received response: {response.to_dict()}")
+                logger.debug(f"Received response: {response.to_dict()}")
             else:
                 logger.error(f"Unexpected message type: {msg.type}")
         except Exception as e:
