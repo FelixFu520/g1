@@ -1,6 +1,6 @@
 .python-version
 uv.lock
-
+.g1
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

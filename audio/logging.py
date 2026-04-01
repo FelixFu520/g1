@@ -1,6 +1,12 @@
 import sys
+import os
 from loguru import logger
 
+from .env import SETTINGS
+
+WORK_DIR = os.path.expanduser(SETTINGS["work_dir"])
+os.makedirs(WORK_DIR, exist_ok=True)
+LOG_FILE = os.path.join(WORK_DIR, "g1.log")
 
 __all__ = ['default_logger']
 
@@ -38,6 +44,16 @@ class Logger:
                 level=self.level,
                 colorize=True
             )
+        
+        # 添加文件日志写入（DEBUG 级别）
+        logger.add(
+            LOG_FILE,
+            format=log_format,
+            level="DEBUG",
+            rotation="100 MB",
+            retention="30 days",
+            encoding="utf-8"
+        )
         
         self.logger = logger
     
