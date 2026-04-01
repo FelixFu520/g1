@@ -12,6 +12,9 @@ uv sync -p 3.8
 ```
 cd g1
 cp g1.json ~/.config/
+mkdir -p ~/.config/g1
+cp g1_system_prompt_en.txt ~/.config/g1
+cp g1_system_prompt_zh.txt ~/.config/g1
 ```
 ## 使用
 ### 源码测试
