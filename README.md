@@ -23,12 +23,15 @@ python 01_device_list.py
 python 02_test_AudioDevice.py
 
 # 豆包ASR
-python -m g1chat.tools.check_audio_device
+export SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
+python 03_doubao_asr.py
 
 # 豆包TTS
+export SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
 python 04_doubao_tts.py
 
 # g1聊天
+export SETTINGS_PATH=/path/of/g1.json # 导入g1.json的路径到环境变量中
 python g1.py
 
 ```

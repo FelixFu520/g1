@@ -8,6 +8,12 @@ import websockets
 
 from .logging import default_logger as logger
 from .audio_device import AudioDevice
+from .volcengine_doubao_tts import (
+    EventType,
+    MsgType,
+    start_connection,
+    wait_for_event,
+)
 
 
 def list_audio_devices(device: str = "USB"):
@@ -292,3 +298,85 @@ async def realtime_audio_generator(audio_device: AudioDevice, duration_seconds: 
         logger.error(f"录音生成器错误: {type(e).__name__}: {e}", exc_info=True)
         raise
 
+
+async def ws_connect(url, headers, **kwargs):
+    """
+    建立 WebSocket 连接，自动适配不同版本的请求头参数名。
+
+    - websockets 14+：使用 additional_headers
+    - websockets 13.x: 使用 extra_headers
+
+    Args:
+        url: WebSocket 服务地址
+        headers: 请求头字典（如 X-Api-* 等）
+        **kwargs: 其他传给 websockets.connect 的参数（如 max_size, ping_interval)
+
+    Returns:
+        WebSocket 连接对象
+    """
+    try:
+        return await websockets.connect(url, additional_headers=headers, **kwargs)
+    except TypeError:
+        return await websockets.connect(url, extra_headers=headers, **kwargs)
+
+
+def is_ws_connection_closed(conn):
+    """
+    判断 WebSocket 连接是否已关闭，兼容 13.x 与 14+。
+
+    - websockets 13.x: 使用 connection.closed
+    - websockets 14+: 使用 connection.state is State.CLOSED (无 .closed 属性)
+
+    Args:
+        conn: WebSocket 连接对象或 None
+
+    Returns:
+        True 表示无需使用conn 为 None)或连接已关闭, False 表示连接仍打开
+    """
+    if conn is None:
+        return True
+    if hasattr(conn, "closed"):
+        return conn.closed
+    try:
+        from websockets.protocol import State
+        return getattr(conn, "state", None) is State.CLOSED
+    except Exception:
+        return True
+
+
+async def create_websocket_connection(tts_appid, tts_access_token, tts_resource_id, tts_endpoint):
+        """
+        创建 WebSocket 连接到 TTS 服务
+        
+        Returns:
+            websockets.WebSocketClientProtocol: WebSocket 连接对象
+            
+        Raises:
+            Exception: 连接失败时抛出异常
+        """
+        # ========== 构建 WebSocket 连接请求头 ==========
+        headers = {
+            "X-Api-App-Key":  tts_appid,  # TTS应用ID
+            "X-Api-Access-Key": tts_access_token,  # TTS访问令牌
+            "X-Api-Resource-Id": (tts_resource_id),  # TTS资源ID（模型ID）
+            "X-Api-Connect-Id": str(uuid.uuid4()),  # 生成唯一的连接 ID
+        }
+
+        # ========== 连接到 WebSocket 服务器 ==========
+        # 使用更宽松的 ping 配置，避免长时间运行后超时
+        websocket = await ws_connect(
+            tts_endpoint, 
+            headers, 
+            max_size=10 * 1024 * 1024,  # 最大消息大小10MB（用于接收音频数据）
+            ping_interval=30,  # 每30秒发送一次ping保持连接活跃（从20秒增加到30秒）
+            ping_timeout=20,   # ping超时时间20秒（从10秒增加到20秒，更宽松）
+            close_timeout=10   # 关闭连接超时时间10秒
+            )
+        
+        # ========== 启动连接 ==========
+        await start_connection(websocket)
+        await wait_for_event(
+            websocket, MsgType.FullServerResponse, EventType.ConnectionStarted
+        )
+        
+        return websocket
