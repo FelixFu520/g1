@@ -774,6 +774,7 @@ class G1Chat:
                         reply, llm_response_type = await self.call_llm(text)
                         
                         self.text_queue.put(f"assistant:{reply.strip()}")
+                        logger.info(f"Assistant: {reply.strip()}")
 
                         # 如果返回的是location信息, 需要提取出来, 发送给queue_text
                         if llm_response_type == "location":
