@@ -689,6 +689,7 @@ class G1Chat:
                             response_text = HOOKS["wake_sleep_hooks"][0]["response_zh"]
                         elif LANGUAGE == "en":
                             response_text = HOOKS["wake_sleep_hooks"][0]["response_en"]
+                        self._interrupt_tts()
                         self._put_tts_text(response_text)
 
                         self.text_queue.put(f"assistant:{response_text}")
@@ -713,6 +714,7 @@ class G1Chat:
                             response_text = HOOKS["wake_sleep_hooks"][1]["response_zh"]
                         elif LANGUAGE == "en":
                             response_text = HOOKS["wake_sleep_hooks"][1]["response_en"]
+                        self._interrupt_tts()
                         self._put_tts_text(response_text)
 
                         self.text_queue.put(f"assistant:{response_text}")
@@ -759,6 +761,7 @@ class G1Chat:
                                 response_text = hook['response_zh']
                             else:
                                 response_text = hook['response_en']
+                            self._interrupt_tts()
                             self._put_tts_text(response_text)
 
                             self.text_queue.put(f"assistant:{response_text}")
@@ -821,6 +824,7 @@ class G1Chat:
                                         response_text = hook['response_zh']
                                     else:
                                         response_text = hook['response_en']
+                                    self._interrupt_tts()
                                     self._put_tts_text(response_text)
 
                                     self.text_queue.put(hook["signal"])
@@ -829,6 +833,7 @@ class G1Chat:
 
                     except Exception as e:
                         logger.error(f"LLM 调用失败: {traceback.format_exc()}")
+                        self._interrupt_tts()
                         self._put_tts_text("抱歉，我这边出错了，请再说一次。")
 
             except asyncio.CancelledError:
@@ -882,6 +887,7 @@ class G1Chat:
                         response_text = HOOKS["control_hooks"][control_signal]["response_zh"]
                     else:
                         response_text = HOOKS["control_hooks"][control_signal]["response_en"]
+                    self._interrupt_tts()
                     self._put_tts_text(response_text)
 
                 await asyncio.sleep(0.1) # 等待0.1秒, 避免频繁读取控制队列
