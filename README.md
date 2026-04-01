@@ -26,16 +26,16 @@ python 01_device_list.py
 python 02_test_AudioDevice.py
 
 # 豆包ASR
-G1_SETTINGS_PATH=/home/unitree/.config/g1 python 03_doubao_asr.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1/g1.json python 03_doubao_asr.py
 
 # 豆包TTS
-G1_SETTINGS_PATH=/home/unitree/.config/g1 python 04_doubao_tts.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1/g1.json python 04_doubao_tts.py
 
 # 豆包LLM
-G1_SETTINGS_PATH=/home/unitree/.config/g1 python 05_doubao_llm.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1/g1.json python 05_doubao_llm.py
 
 # g1聊天
-G1_SETTINGS_PATH=/home/unitree/.config/g1 python g1.py
+G1_SETTINGS_PATH=/home/unitree/.config/g1/g1.json python g1.py
 
 ```
 ### ROS集成
