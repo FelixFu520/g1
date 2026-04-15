@@ -2,6 +2,9 @@
 本项目是宇树机器人G1的对话库
 
 ## 安装
+### 硬件连接
+[硬件相关](install.md)
+### 本项目环境配置
 ```
 sudo apt-get install portaudio19-dev
 git clone https://github.com/FelixFu520/g1.git
